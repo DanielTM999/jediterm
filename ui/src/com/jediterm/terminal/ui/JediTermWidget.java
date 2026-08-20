@@ -48,7 +48,7 @@ public class JediTermWidget extends JPanel implements TerminalSession, TerminalW
   private TtyConnector myTtyConnector;
   private TerminalStarter myTerminalStarter;
   private final CompletableFuture<TerminalStarter> myTerminalStarterFuture = new CompletableFuture<>();
-  protected final SettingsProvider mySettingsProvider;
+  protected volatile SettingsProvider mySettingsProvider;
   private TerminalActionProvider myNextActionProvider;
   private final JLayeredPane myInnerPanel;
   private final TextProcessing myTextProcessing;
@@ -117,9 +117,14 @@ public class JediTermWidget extends JPanel implements TerminalSession, TerminalW
     return scrollBar;
   }
 
+  @SuppressWarnings("removal")
   protected StyleState createDefaultStyle() {
     StyleState styleState = new StyleState();
-    styleState.setDefaultStyle(mySettingsProvider.getDefaultStyle());
+    // Read the non-deprecated accessors, not getDefaultStyle(). They are documented as its replacement, but this
+    // was still going through the deprecated one, so a provider that overrode only the new pair silently got the
+    // hardcoded black-on-white fallback -- which also paints the caret in the background color.
+    styleState.setDefaultStyle(new TextStyle(mySettingsProvider.getDefaultForeground(),
+                                             mySettingsProvider.getDefaultBackground()));
     return styleState;
   }
 
@@ -141,6 +146,23 @@ public class JediTermWidget extends JPanel implements TerminalSession, TerminalW
 
   public TerminalDisplay getTerminalDisplay() {
     return getTerminalPanel();
+  }
+
+  public @NotNull SettingsProvider getSettingsProvider() {
+    return mySettingsProvider;
+  }
+
+  /**
+   * Replaces the settings of this widget and its panel, and reapplies them in place. The running session, its
+   * scrollback and the tty connection are kept.
+   * <p>
+   * Note that settings read once at construction time, such as
+   * {@link com.jediterm.terminal.ui.settings.UserSettingsProvider#getBufferMaxLinesCount()}, are applied through
+   * {@link com.jediterm.terminal.model.TerminalTextBuffer#setMaxHistoryLinesCount(int)} instead.
+   */
+  public void setSettingsProvider(@NotNull SettingsProvider settingsProvider) {
+    mySettingsProvider = settingsProvider;
+    myTerminalPanel.setSettingsProvider(settingsProvider);
   }
 
   public TerminalPanel getTerminalPanel() {

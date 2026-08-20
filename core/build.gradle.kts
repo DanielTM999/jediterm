@@ -67,7 +67,7 @@ tasks.withType<JavaCompile> {
   options.encoding = Charsets.UTF_8.name()
 }
 
-val resultArchiveBaseName = "jediterm-core"
+val resultArchiveBaseName = "jediterm-core-orion"
 
 tasks.withType<Jar> {
   archiveBaseName = resultArchiveBaseName // to change name of out/libs/*.jar
@@ -79,9 +79,9 @@ publishing {
       from(components["java"])
       artifactId = resultArchiveBaseName // by default `project.name` is used - "core"
       pom {
-        name = "JediTerm"
-        description = "Pure Java Terminal Emulator"
-        url = "https://github.com/JetBrains/jediterm"
+        name = "JediTerm Orion"
+        description = "Pure Java Terminal Emulator - Orion fork"
+        url = "https://github.com/DanielTM999/jediterm"
         licenses {
           license {
             name = "LGPL 3.0"
@@ -89,19 +89,10 @@ publishing {
           }
         }
         scm {
-          connection = "scm:git:git://github.com/JetBrains/jediterm.git"
-          developerConnection = "scm:git:ssh:github.com/JetBrains/jediterm.git"
-          url = "https://github.com/JetBrains/jediterm"
+          connection = "scm:git:git://github.com/DanielTM999/jediterm.git"
+          developerConnection = "scm:git:ssh:github.com/DanielTM999/jediterm.git"
+          url = "https://github.com/DanielTM999/jediterm"
         }
-      }
-    }
-  }
-  repositories {
-    maven {
-      url = uri("https://packages.jetbrains.team/maven/p/ij/intellij-dependencies")
-      credentials {
-        username = System.getenv("INTELLIJ_DEPENDENCIES_BOT")
-        password = System.getenv("INTELLIJ_DEPENDENCIES_TOKEN")
       }
     }
   }

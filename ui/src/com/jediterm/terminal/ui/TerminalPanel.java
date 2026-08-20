@@ -24,6 +24,10 @@ import com.jediterm.terminal.model.hyperlinks.TextProcessing;
 import com.jediterm.terminal.ui.hyperlinks.LinkInfoEx;
 import com.jediterm.terminal.ui.input.AwtMouseEvent;
 import com.jediterm.terminal.ui.input.AwtMouseWheelEvent;
+import com.jediterm.terminal.ui.ext.TerminalFontResolver;
+import com.jediterm.terminal.ui.ext.TerminalKeyInterceptor;
+import com.jediterm.terminal.ui.ext.TerminalScrollListener;
+import com.jediterm.terminal.ui.ext.TerminalSettingsListener;
 import com.jediterm.terminal.ui.settings.SettingsProvider;
 import com.jediterm.terminal.util.CharUtils;
 import kotlin.Pair;
@@ -81,7 +85,7 @@ public class TerminalPanel extends JComponent implements TerminalDisplay, Termin
 
   private final TerminalCopyPasteHandler myCopyPasteHandler;
 
-  private final SettingsProvider mySettingsProvider;
+  private volatile SettingsProvider mySettingsProvider;
   private final TerminalTextBuffer myTerminalTextBuffer;
 
   final private StyleState myStyleState;
@@ -99,6 +103,10 @@ public class TerminalPanel extends JComponent implements TerminalDisplay, Termin
   private final List<KeyListener> myCustomKeyListeners = new CopyOnWriteArrayList<>();
 
   private final List<TerminalSelectionChangesListener> selectionChangesListeners = new CopyOnWriteArrayList<>();
+  private final List<TerminalKeyInterceptor> keyInterceptors = new CopyOnWriteArrayList<>();
+  private final List<TerminalScrollListener> scrollListeners = new CopyOnWriteArrayList<>();
+  private final List<TerminalSettingsListener> settingsListeners = new CopyOnWriteArrayList<>();
+  private volatile @Nullable TerminalFontResolver fontResolver;
 
   private String myWindowTitle = "Terminal";
 
@@ -134,6 +142,7 @@ public class TerminalPanel extends JComponent implements TerminalDisplay, Termin
     myStyleState = styleState;
     myTermSize = new TermSize(terminalTextBuffer.getWidth(), terminalTextBuffer.getHeight());
     myMaxFPS = mySettingsProvider.maxRefreshRate();
+    myCursor.setDefaultShape(mySettingsProvider.getDefaultCursorShape());
     myCopyPasteHandler = createCopyPasteHandler();
 
     updateScrolling(true);
@@ -167,7 +176,7 @@ public class TerminalPanel extends JComponent implements TerminalDisplay, Termin
     super.repaint();
   }
 
-  protected void reinitFontAndResize() {
+  public void reinitFontAndResize() {
     initFont();
 
     sizeTerminalFromComponent();
@@ -360,11 +369,21 @@ public class TerminalPanel extends JComponent implements TerminalDisplay, Termin
   }
 
   protected void handleMouseWheelEvent(@NotNull MouseWheelEvent e, @NotNull JScrollBar scrollBar) {
-    if (e.isShiftDown() || e.getUnitsToScroll() == 0 || Math.abs(e.getPreciseWheelRotation()) < 0.01) {
-      return;
+    for (TerminalScrollListener listener : scrollListeners) {
+      listener.beforeMouseWheelScroll();
     }
-    moveScrollBar(e.getUnitsToScroll());
-    e.consume();
+    try {
+      if (e.isShiftDown() || e.getUnitsToScroll() == 0 || Math.abs(e.getPreciseWheelRotation()) < 0.01) {
+        return;
+      }
+      moveScrollBar(e.getUnitsToScroll());
+      e.consume();
+    }
+    finally {
+      for (TerminalScrollListener listener : scrollListeners) {
+        listener.afterMouseWheelScroll();
+      }
+    }
   }
 
   private void handleHyperlinks(@NotNull java.awt.Point panelPoint) {
@@ -425,7 +444,7 @@ public class TerminalPanel extends JComponent implements TerminalDisplay, Termin
 
   private @Nullable HyperlinkStyle findHyperlink(@Nullable Cell cell) {
     if (cell != null && cell.getColumn() >= 0 && cell.getColumn() < myTerminalTextBuffer.getWidth() &&
-      cell.getLine() >= -myTerminalTextBuffer.getHistoryLinesCount() && cell.getLine() <= myTerminalTextBuffer.getHeight()) {
+      cell.getLine() >= -myTerminalTextBuffer.getHistoryLinesCount() && cell.getLine() < myTerminalTextBuffer.getHeight()) {
       TextStyle style = myTerminalTextBuffer.getStyleAt(cell.getColumn(), cell.getLine());
       if (style instanceof HyperlinkStyle) {
         return (HyperlinkStyle) style;
@@ -585,9 +604,13 @@ public class TerminalPanel extends JComponent implements TerminalDisplay, Termin
   }
 
   private @NotNull Cell panelPointToCell(@NotNull java.awt.Point p) {
-    int x = Math.min((p.x - getInsetX()) / myCharSize.width, getColumnCount() - 1);
+    // The char size is only known once the font metrics are established, but mouse events can reach us before
+    // init() and after dispose(); dividing by it unguarded is an ArithmeticException on those edges.
+    int charWidth = Math.max(1, myCharSize.width);
+    int charHeight = Math.max(1, myCharSize.height);
+    int x = Math.min((p.x - getInsetX()) / charWidth, getColumnCount() - 1);
     x = Math.max(0, x);
-    int y = Math.min(p.y / myCharSize.height, getRowCount() - 1) + myClientScrollOrigin;
+    int y = Math.min(p.y / charHeight, getRowCount() - 1) + myClientScrollOrigin;
     return new Cell(y, x);
   }
 
@@ -685,6 +708,76 @@ public class TerminalPanel extends JComponent implements TerminalDisplay, Termin
 
   public void removeSelectionListener(@NotNull TerminalSelectionChangesListener selectionListener) {
     selectionChangesListeners.remove(selectionListener);
+  }
+
+  /**
+   * Installs the strategy used to pick a font per painted run, letting callers add glyph fallback or per-style fonts
+   * without subclassing. Pass {@code null} to restore the default behaviour.
+   */
+  public void setFontResolver(@Nullable TerminalFontResolver fontResolver) {
+    this.fontResolver = fontResolver;
+    repaint();
+  }
+
+  public @Nullable TerminalFontResolver getFontResolver() {
+    return fontResolver;
+  }
+
+  public void addKeyInterceptor(@NotNull TerminalKeyInterceptor interceptor) {
+    keyInterceptors.add(interceptor);
+  }
+
+  public void removeKeyInterceptor(@NotNull TerminalKeyInterceptor interceptor) {
+    keyInterceptors.remove(interceptor);
+  }
+
+  public void addScrollListener(@NotNull TerminalScrollListener listener) {
+    scrollListeners.add(listener);
+  }
+
+  public void removeScrollListener(@NotNull TerminalScrollListener listener) {
+    scrollListeners.remove(listener);
+  }
+
+  public void addSettingsListener(@NotNull TerminalSettingsListener listener) {
+    settingsListeners.add(listener);
+  }
+
+  public void removeSettingsListener(@NotNull TerminalSettingsListener listener) {
+    settingsListeners.remove(listener);
+  }
+
+  public @NotNull SettingsProvider getSettingsProvider() {
+    return mySettingsProvider;
+  }
+
+  /**
+   * Replaces the settings of this panel and reapplies them. Prefer this over recreating the terminal when the user
+   * changes preferences, so the session and its scrollback survive.
+   */
+  public void setSettingsProvider(@NotNull SettingsProvider settingsProvider) {
+    mySettingsProvider = settingsProvider;
+    settingsChanged();
+  }
+
+  /**
+   * Reapplies the current settings. Call it when the installed {@link SettingsProvider} starts reporting new values.
+   * Must be called on EDT.
+   */
+  public void settingsChanged() {
+    myMaxFPS = mySettingsProvider.maxRefreshRate();
+    myCursor.setDefaultShape(mySettingsProvider.getDefaultCursorShape());
+    createRepaintTimer();
+    myFillCharacterBackgroundIncludingLineSpacing = mySettingsProvider.shouldFillCharacterBackgroundIncludingLineSpacing();
+    myCachedSelectionColor = null;
+    myCachedFoundPatternColor = null;
+    setBlinkingPeriod(mySettingsProvider.caretBlinkingMs());
+    reinitFontAndResize();
+    repaint();
+    SettingsProvider provider = mySettingsProvider;
+    for (TerminalSettingsListener listener : settingsListeners) {
+      listener.settingsChanged(provider);
+    }
   }
 
   @Override
@@ -960,6 +1053,11 @@ public class TerminalPanel extends JComponent implements TerminalDisplay, Termin
 
   // also called from com.intellij.terminal.JBTerminalPanel
   public void handleKeyEvent(@NotNull KeyEvent e) {
+    for (TerminalKeyInterceptor interceptor : keyInterceptors) {
+      if (interceptor.beforeKeyEvent(e)) {
+        return;
+      }
+    }
     final int id = e.getID();
     if (id == KeyEvent.KEY_PRESSED) {
       for (KeyListener keyListener : myCustomKeyListeners) {
@@ -970,11 +1068,18 @@ public class TerminalPanel extends JComponent implements TerminalDisplay, Termin
         keyListener.keyTyped(e);
       }
     }
+    for (TerminalKeyInterceptor interceptor : keyInterceptors) {
+      interceptor.afterKeyEvent(e);
+    }
   }
 
   private void updateSelectionEnd(Point selectionEnd) {
     mySelection.updateEnd(selectionEnd);
     updateSelection(mySelection);
+  }
+
+  public void setSelection(@Nullable TerminalSelection selection) {
+    updateSelection(selection);
   }
 
   private void updateSelection(@Nullable TerminalSelection selection) {
@@ -1231,7 +1336,7 @@ public class TerminalPanel extends JComponent implements TerminalDisplay, Termin
         case BLINK_UNDERLINE:
         case STEADY_UNDERLINE:
           gfx.setColor(fgColor);
-          gfx.fillRect(xCoord, yCoord + height, width, lineStrokeSize);
+          gfx.fillRect(xCoord, yCoord + height - lineStrokeSize, width, lineStrokeSize);
           break;
 
         case BLINK_VERTICAL_BAR:
@@ -1455,15 +1560,30 @@ public class TerminalPanel extends JComponent implements TerminalDisplay, Termin
     java.awt.Color foreground = getEffectiveForeground(style);
     if (style.hasOption(Option.DIM)) {
       java.awt.Color background = getEffectiveBackground(style);
-      foreground = new java.awt.Color((foreground.getRed() + background.getRed()) / 2,
-                             (foreground.getGreen() + background.getGreen()) / 2,
-                             (foreground.getBlue() + background.getBlue()) / 2,
+      float intensity = Math.max(0f, Math.min(1f, mySettingsProvider.dimIntensity()));
+      foreground = new java.awt.Color(dim(foreground.getRed(), background.getRed(), intensity),
+                             dim(foreground.getGreen(), background.getGreen(), intensity),
+                             dim(foreground.getBlue(), background.getBlue(), intensity),
                              foreground.getAlpha());
     }
     return foreground;
   }
 
+  private static int dim(int foreground, int background, float intensity) {
+    return Math.round(background + (foreground - background) * intensity);
+  }
+
   protected @NotNull Font getFontToDisplay(char[] text, int start, int end, @NotNull TextStyle style) {
+    Font base = getStyledFontToDisplay(text, start, end, style);
+    TerminalFontResolver resolver = fontResolver;
+    if (resolver == null) {
+      return base;
+    }
+    Font resolved = resolver.resolveFont(base, text, start, end, style);
+    return resolved != null ? resolved : base;
+  }
+
+  private @NotNull Font getStyledFontToDisplay(char[] text, int start, int end, @NotNull TextStyle style) {
     boolean bold = style.hasOption(TextStyle.Option.BOLD);
     boolean italic = style.hasOption(TextStyle.Option.ITALIC);
     // workaround to fix Swing bad rendering of bold special chars on Linux
@@ -1486,8 +1606,14 @@ public class TerminalPanel extends JComponent implements TerminalDisplay, Termin
 
   // Called in a background thread with myTerminalTextBuffer.lock() acquired
   public void scrollArea(final int scrollRegionTop, final int scrollRegionSize, int dy) {
+    for (TerminalScrollListener listener : scrollListeners) {
+      listener.beforeScrollArea(scrollRegionTop, scrollRegionSize, dy);
+    }
     scrollDy.addAndGet(dy);
     updateSelection(null);
+    for (TerminalScrollListener listener : scrollListeners) {
+      listener.afterScrollArea(scrollRegionTop, scrollRegionSize, dy);
+    }
   }
 
   // should be called on EDT
@@ -1795,7 +1921,7 @@ public class TerminalPanel extends JComponent implements TerminalDisplay, Termin
    * @param keepLastLine true to keep last line (e.g. to keep terminal prompt)
    *                     false to clear entire terminal panel (relevant for terminal console)
    */
-  protected void clearBuffer(boolean keepLastLine) {
+  public void clearBuffer(boolean keepLastLine) {
     if (!myTerminalTextBuffer.isUsingAlternateBuffer()) {
       myTerminalTextBuffer.clearHistory();
 

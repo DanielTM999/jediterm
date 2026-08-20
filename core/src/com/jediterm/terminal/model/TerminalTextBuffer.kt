@@ -26,10 +26,16 @@ class TerminalTextBuffer internal constructor(
   initialWidth: Int,
   initialHeight: Int,
   private val styleState: StyleState,
-  private val maxHistoryLinesCount: Int,
+  maxHistoryLinesCount: Int,
   @get:JvmName("getTextProcessing") // keep the name stable for Java callers
   internal val textProcessing: TextProcessing?
 ) {
+  /**
+   * How many lines of scrollback the active buffer keeps. Negative means unlimited.
+   * Change it with [setMaxHistoryLinesCount], which preserves the lines already recorded.
+   */
+  private var maxHistoryLinesCount: Int = maxHistoryLinesCount
+
   /**
    * The size of the screen of the active buffer (either main or alternative one)
    */
@@ -94,6 +100,45 @@ class TerminalTextBuffer internal constructor(
 
   private fun createHistoryLinesStorage(): LinesStorage {
     return CyclicBufferLinesStorage(maxHistoryLinesCount)
+  }
+
+  fun getMaxHistoryLinesCount(): Int = maxHistoryLinesCount
+
+  /**
+   * Resizes the scrollback of this buffer in place, keeping the most recent lines. Shrinking discards the oldest
+   * lines beyond the new limit. A negative [newCount] means unlimited.
+   *
+   * Without this, the scrollback size is fixed at construction time and a preference change can only take effect on
+   * a brand new terminal session.
+   */
+  fun setMaxHistoryLinesCount(newCount: Int) {
+    lock()
+    try {
+      if (newCount == maxHistoryLinesCount) {
+        return
+      }
+      maxHistoryLinesCount = newCount
+      historyLinesStorage = resizedHistoryLinesStorage(historyLinesStorage)
+      historyBuffer = createLinesBuffer(historyLinesStorage)
+      historyLinesStorageBackup?.let {
+        val resized = resizedHistoryLinesStorage(it)
+        historyLinesStorageBackup = resized
+        historyBufferBackup = createLinesBuffer(resized)
+      }
+    }
+    finally {
+      unlock()
+    }
+    fireHistoryBufferLineCountChanged()
+    fireModelChangeEvent()
+  }
+
+  private fun resizedHistoryLinesStorage(storage: LinesStorage): LinesStorage {
+    val resized = createHistoryLinesStorage()
+    val lines = storage.toList()
+    val firstKept = if (maxHistoryLinesCount in 0 until lines.size) lines.size - maxHistoryLinesCount else 0
+    resized.addAllToBottom(lines.subList(firstKept, lines.size))
+    return resized
   }
 
   private fun createLinesBuffer(delegate: LinesStorage): LinesBuffer {

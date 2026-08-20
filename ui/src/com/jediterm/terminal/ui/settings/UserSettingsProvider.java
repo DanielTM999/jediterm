@@ -1,5 +1,6 @@
 package com.jediterm.terminal.ui.settings;
 
+import com.jediterm.terminal.CursorShape;
 import com.jediterm.terminal.HyperlinkStyle;
 import com.jediterm.terminal.TerminalColor;
 import com.jediterm.terminal.TextStyle;
@@ -56,6 +57,21 @@ public interface UserSettingsProvider {
   TextStyle getHyperlinkColor();
 
   HyperlinkStyle.HighlightMode getHyperlinkHighlightingMode();
+
+  /**
+   * How much of the foreground color survives when a run carries the DIM (SGR 2) attribute, as a fraction between
+   * 0 and 1: {@code 1} paints it at full strength, {@code 0.5} is the classic even blend with the background.
+   * <p>
+   * Modern CLI tools lean on DIM for secondary text, and an even blend can push it close to unreadable against a
+   * high-contrast background, so this is worth raising for a terminal embedded in an IDE.
+   */
+  default float dimIntensity() { return 0.5f; }
+
+  /**
+   * Shape of the caret while the running application has not asked for one via DECSCUSR. An application's own
+   * request always wins over this.
+   */
+  default @NotNull CursorShape getDefaultCursorShape() { return CursorShape.BLINK_BLOCK; }
 
   default boolean enableTextBlinking() { return false; }
 

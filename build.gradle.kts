@@ -1,9 +1,9 @@
-val projectVersion = rootProject.projectDir.resolve("VERSION").readText().trim() +
-  if (System.getenv("INTELLIJ_DEPENDENCIES_BOT") == null) "-SNAPSHOT" else ""
+val upstreamVersion = rootProject.projectDir.resolve("VERSION").readText().trim()
+val orionRevision = providers.gradleProperty("orionRevision").getOrElse("1")
 
 allprojects {
-  version = projectVersion
-  group = "org.jetbrains.jediterm"
+  version = "$upstreamVersion-orion.$orionRevision"
+  group = "dtm.ide"
   layout.buildDirectory = rootProject.projectDir.resolve(".gradleBuild/" + project.name)
 }
 

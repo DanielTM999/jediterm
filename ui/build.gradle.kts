@@ -24,7 +24,7 @@ java {
 }
 
 dependencies {
-  implementation(project(":core"))
+  api(project(":core"))
   implementation("org.slf4j:slf4j-api:2.0.9")
   implementation("org.jetbrains:annotations:24.0.1")
   testImplementation("junit:junit:4.13.2")
@@ -68,21 +68,21 @@ tasks.withType<JavaCompile> {
   options.encoding = Charsets.UTF_8.name()
 }
 
-val resultArchiveBaseName = "jediterm-ui"
+val resultArchiveBaseName = "jediterm-ui-orion"
 
 tasks.withType<Jar> {
-  archiveBaseName = resultArchiveBaseName
+  archiveBaseName = resultArchiveBaseName // to change name of out/libs/*.jar
 }
 
 publishing {
   publications {
     create<MavenPublication>("mavenJava") {
       from(components["java"])
-      artifactId = resultArchiveBaseName
+      artifactId = resultArchiveBaseName // by default `project.name` is used - "ui"
       pom {
-        name = "JediTerm"
-        description = "Pure Java Terminal Emulator"
-        url = "https://github.com/JetBrains/jediterm"
+        name = "JediTerm Orion"
+        description = "Pure Java Terminal Emulator - Orion fork"
+        url = "https://github.com/DanielTM999/jediterm"
         licenses {
           license {
             name = "LGPL 3.0"
@@ -90,19 +90,10 @@ publishing {
           }
         }
         scm {
-          connection = "scm:git:git://github.com/JetBrains/jediterm.git"
-          developerConnection = "scm:git:ssh:github.com/JetBrains/jediterm.git"
-          url = "https://github.com/JetBrains/jediterm"
+          connection = "scm:git:git://github.com/DanielTM999/jediterm.git"
+          developerConnection = "scm:git:ssh:github.com/DanielTM999/jediterm.git"
+          url = "https://github.com/DanielTM999/jediterm"
         }
-      }
-    }
-  }
-  repositories {
-    maven {
-      url = uri("https://packages.jetbrains.team/maven/p/ij/intellij-dependencies")
-      credentials {
-        username = System.getenv("INTELLIJ_DEPENDENCIES_BOT")
-        password = System.getenv("INTELLIJ_DEPENDENCIES_TOKEN")
       }
     }
   }
