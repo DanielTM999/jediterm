@@ -39,7 +39,8 @@ Novo, sem equivalente upstream (não conflita em rebase):
 | `reinitFontAndResize()` passou de `protected` para `public` | reaplicar fonte de fora do painel |
 | `getFontToDisplay` consulta um `TerminalFontResolver`; a lógica original virou `getStyledFontToDisplay` | fallback de glifo sem subclasse |
 | `handleKeyEvent` roda os `TerminalKeyInterceptor` (com poder de consumir o evento) | `addCustomKeyListener` vê a tecla mas não consegue vetá-la |
-| `scrollArea` e `handleMouseWheelEvent` notificam `TerminalScrollListener` | ancorar viewport/seleção durante saída contínua |
+| `scrollArea` e `handleMouseWheelEvent` notificam `TerminalScrollListener` | ancorar viewport durante saída contínua |
+| **fix:** `scrollArea` deslocava a seleção junto com o texto (`keepSelectionOnScrolledText`) em vez de chamar `updateSelection(null)` | o upstream limpava a seleção a cada linha rolada, então era impossível selecionar/copiar com o processo ainda escrevendo. A seleção só é descartada quando deixa de acompanhar o texto: quando cruza a borda da região rolada ou quando sai do histórico |
 | novo `setSelection(TerminalSelection)` público, delegando ao `updateSelection` privado | evita reflexão no campo `mySelection` |
 | listas `keyInterceptors` / `scrollListeners` / `settingsListeners` + campo `fontResolver` e respectivos add/remove | registro dos hooks acima |
 | **fix:** cursor sublinhado desenhava em `yCoord + height`, fora da célula | invadia a linha de baixo |

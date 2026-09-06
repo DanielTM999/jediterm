@@ -65,7 +65,6 @@ public class TerminalPanel extends JComponent implements TerminalDisplay, Termin
 
   public static final double SCROLL_SPEED = 0.05;
 
-  /*font related*/
   private Font myNormalFont;
   private Font myItalicFont;
   private Font myBoldFont;
@@ -90,12 +89,10 @@ public class TerminalPanel extends JComponent implements TerminalDisplay, Termin
 
   final private StyleState myStyleState;
 
-  /*scroll and cursor*/
   final private TerminalCursor myCursor = new TerminalCursor();
 
   private final BlinkingTextTracker myTextBlinkingTracker = new BlinkingTextTracker();
 
-  //we scroll a window [0, terminal_height] in the range [-history_lines_count, terminal_height]
   private final BoundedRangeModel myBoundedRangeModel = new DefaultBoundedRangeModel(0, 80, 0, 80);
 
   private boolean myScrollingEnabled = true;
@@ -1444,10 +1441,6 @@ public class TerminalPanel extends JComponent implements TerminalDisplay, Termin
     return myHoveredHyperlink == link.getLinkInfo();
   }
 
-  /**
-   * Draw every char in separate terminal cell to guaranty equal width for different lines.
-   * Nevertheless, to improve kerning we draw word characters as one block for monospaced fonts.
-   */
   private void drawChars(int x, int y, @NotNull CharBuffer buf, @NotNull TextStyle style, @NotNull Graphics2D gfx) {
     // workaround to fix Swing bad rendering of bold special chars on Linux
     // TODO required for italic?
@@ -1610,10 +1603,73 @@ public class TerminalPanel extends JComponent implements TerminalDisplay, Termin
       listener.beforeScrollArea(scrollRegionTop, scrollRegionSize, dy);
     }
     scrollDy.addAndGet(dy);
-    updateSelection(null);
+    keepSelectionOnScrolledText(scrollRegionTop, scrollRegionSize, dy);
     for (TerminalScrollListener listener : scrollListeners) {
       listener.afterScrollArea(scrollRegionTop, scrollRegionSize, dy);
     }
+  }
+
+  private void keepSelectionOnScrolledText(int scrollRegionTop, int scrollRegionSize, int dy) {
+    if (dy == 0) {
+      return;
+    }
+    // Lines deleted from the top of the screen are appended to the history, hence the history moves as well.
+    int movedTop = dy < 0 && scrollRegionTop == 1 ? Integer.MIN_VALUE : scrollRegionTop - 1;
+    int movedBottom = scrollRegionTop + scrollRegionSize - 2;
+
+    Point selectionStartPoint = mySelectionStartPoint;
+    if (selectionStartPoint != null && isMovedByScroll(selectionStartPoint.y, movedTop, movedBottom)) {
+      selectionStartPoint.y += dy;
+    }
+
+    TerminalSelection selection = mySelection;
+    if (selection == null) {
+      return;
+    }
+    Point start = selection.getStart();
+    Point end = selection.getEnd();
+    boolean startMoved = isMovedByScroll(start.y, movedTop, movedBottom);
+    if (end != null && startMoved != isMovedByScroll(end.y, movedTop, movedBottom)) {
+      updateSelection(null);
+      return;
+    }
+    if (!startMoved) {
+      return;
+    }
+    start.y += dy;
+    if (end != null) {
+      end.y += dy;
+    }
+
+    int historyTop = -historyLinesCountAfterScroll(scrollRegionTop, dy);
+    Point topPoint = start;
+    Point bottomPoint = start;
+    if (end != null) {
+      topPoint = end.y < start.y ? end : start;
+      bottomPoint = end.y < start.y ? start : end;
+    }
+    if (bottomPoint.y < historyTop) {
+      updateSelection(null);
+      return;
+    }
+    if (topPoint.y < historyTop) {
+      topPoint.y = historyTop;
+      topPoint.x = 0;
+    }
+  }
+
+  private static boolean isMovedByScroll(int y, int movedTop, int movedBottom) {
+    return y >= movedTop && y <= movedBottom;
+  }
+
+  private int historyLinesCountAfterScroll(int scrollRegionTop, int dy) {
+    int historyLinesCount = myTerminalTextBuffer.getHistoryLinesCount();
+    if (dy >= 0 || scrollRegionTop != 1) {
+      return historyLinesCount;
+    }
+    int maxHistoryLinesCount = myTerminalTextBuffer.getMaxHistoryLinesCount();
+    int grownHistoryLinesCount = historyLinesCount - dy;
+    return maxHistoryLinesCount >= 0 ? Math.min(grownHistoryLinesCount, maxHistoryLinesCount) : grownHistoryLinesCount;
   }
 
   // should be called on EDT
