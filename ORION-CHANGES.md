@@ -48,11 +48,27 @@ Novo, sem equivalente upstream (não conflita em rebase):
 | **fix:** `findHyperlink` aceitava `line == height` (off-by-one) | linha fora do buffer |
 | `getStyleForeground` usa `UserSettingsProvider.dimIntensity()` no lugar da média fixa 50% | CLIs modernas usam SGR 2 (DIM) para texto secundário; blend 50/50 deixa quase ilegível |
 | construtor e `settingsChanged()` aplicam `UserSettingsProvider.getDefaultCursorShape()` | forma do caret configurável (DECSCUSR da aplicação continua tendo precedência) |
+| `handleHyperlinks` e `isFollowLinkEvent` passaram a receber os modificadores do evento e consultam `matchesLinkActivationModifiers`; novo `refreshHyperlinksOnModifierChange` em `handleKeyEvent` | ativar link só com Ctrl/Cmd (estilo IntelliJ). O upstream acende o cursor de mão e navega em clique simples, sem olhar modificador, e não reavalia o hover quando só a tecla muda |
+| `hasUnderline`: `HighlightMode.ALWAYS` só sublinha sempre quando o link **não** exige modificador; exigindo, comporta-se como `HOVER` | com `ALWAYS` (o modo que o OrionIde usa) todo caminho detectado ficaria sublinhado mesmo sem Ctrl |
 
 ### `ui/.../settings/UserSettingsProvider.java`
 
-Dois métodos `default` novos, ambos com o comportamento upstream como padrão:
-`dimIntensity()` (`0.5f`) e `getDefaultCursorShape()` (`BLINK_BLOCK`).
+Três métodos `default` novos, todos com o comportamento upstream como padrão:
+`dimIntensity()` (`0.5f`), `getDefaultCursorShape()` (`BLINK_BLOCK`) e `getLinkActivationModifiersEx()`
+(`0`, ou seja, nenhum modificador exigido para seguir um link).
+
+### `ui/.../hyperlinks/LinkInfoEx.java`
+
+Dois ajustes por link, ambos opcionais e sem efeito quando não usados:
+`Builder.setActivationModifiersEx(Integer)` (sobrepõe o padrão do provider — permite que URLs sigam em clique
+simples e links de arquivo exijam Ctrl no mesmo terminal) e `Builder.setPreserveTextStyle(boolean)`.
+
+### `core/.../model/hyperlinks/LinkInfo.java` e `TextProcessing.java`
+
+`LinkInfo` ganhou `preserveTextStyle`. Quando ligado, `TextProcessing.applyLinkResults` monta o
+`HyperlinkStyle` a partir do estilo que o texto já tinha (`TerminalLine.getStyleAt`) em vez de repintar tudo
+com `getHyperlinkColor()` — necessário para linkar saída que já vem colorida pelo programa (`git status`,
+stack traces), que de outro modo perderia as cores originais.
 
 ### Conhecido, não corrigido
 

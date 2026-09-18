@@ -73,6 +73,13 @@ public interface UserSettingsProvider {
    */
   default @NotNull CursorShape getDefaultCursorShape() { return CursorShape.BLINK_BLOCK; }
 
+  /**
+   * Extended modifier mask (see {@link java.awt.event.InputEvent}) that must be held down for a hyperlink to be
+   * highlighted and activated. {@code 0}, the default, keeps the upstream behaviour of a plain click. A link may
+   * override this per instance through {@code LinkInfoEx}.
+   */
+  default int getLinkActivationModifiersEx() { return 0; }
+
   default boolean enableTextBlinking() { return false; }
 
   default int slowTextBlinkMs() { return 1000; }

@@ -202,7 +202,7 @@ public class TerminalPanel extends JComponent implements TerminalDisplay, Termin
     addMouseMotionListener(new MouseMotionAdapter() {
       @Override
       public void mouseMoved(MouseEvent e) {
-        handleHyperlinks(e.getPoint());
+        handleHyperlinks(e.getPoint(), e.getModifiersEx());
       }
 
       @Override
@@ -349,7 +349,7 @@ public class TerminalPanel extends JComponent implements TerminalDisplay, Termin
       public void focusLost(FocusEvent e) {
         myCursor.cursorChanged();
 
-        handleHyperlinks(e.getComponent());
+        handleHyperlinks(e.getComponent(), 0);
       }
     });
 
@@ -362,7 +362,27 @@ public class TerminalPanel extends JComponent implements TerminalDisplay, Termin
   }
 
   private boolean isFollowLinkEvent(@NotNull MouseEvent e) {
-    return myCursorType == Cursor.HAND_CURSOR && e.getButton() == MouseEvent.BUTTON1;
+    if (myCursorType != Cursor.HAND_CURSOR || e.getButton() != MouseEvent.BUTTON1) {
+      return false;
+    }
+    HyperlinkStyle linkStyle = findHyperlink(e.getPoint());
+    return linkStyle != null && matchesLinkActivationModifiers(linkStyle.getLinkInfo(), e.getModifiersEx());
+  }
+
+  /**
+   * Whether the modifiers currently held down are the ones the given link requires to be followed. The requirement
+   * comes from the link itself when it declares one, otherwise from
+   * {@link UserSettingsProvider#getLinkActivationModifiersEx()}.
+   */
+  private boolean matchesLinkActivationModifiers(@Nullable LinkInfo linkInfo, int modifiersEx) {
+    Integer linkModifiersEx = LinkInfoEx.getActivationModifiersEx(linkInfo);
+    int requiredModifiersEx = linkModifiersEx != null ? linkModifiersEx : mySettingsProvider.getLinkActivationModifiersEx();
+    return requiredModifiersEx == 0 || (modifiersEx & requiredModifiersEx) == requiredModifiersEx;
+  }
+
+  private boolean requiresActivationModifiers(@Nullable LinkInfo linkInfo) {
+    Integer linkModifiersEx = LinkInfoEx.getActivationModifiersEx(linkInfo);
+    return (linkModifiersEx != null ? linkModifiersEx : mySettingsProvider.getLinkActivationModifiersEx()) != 0;
   }
 
   protected void handleMouseWheelEvent(@NotNull MouseWheelEvent e, @NotNull JScrollBar scrollBar) {
@@ -383,9 +403,12 @@ public class TerminalPanel extends JComponent implements TerminalDisplay, Termin
     }
   }
 
-  private void handleHyperlinks(@NotNull java.awt.Point panelPoint) {
+  private void handleHyperlinks(@NotNull java.awt.Point panelPoint, int modifiersEx) {
     Cell cell = panelPointToCell(panelPoint);
     HyperlinkStyle linkStyle = findHyperlink(cell);
+    if (linkStyle != null && !matchesLinkActivationModifiers(linkStyle.getLinkInfo(), modifiersEx)) {
+      linkStyle = null;
+    }
     LinkInfo linkInfo = linkStyle != null ? linkStyle.getLinkInfo() : null;
     LinkInfoEx.HoverConsumer linkHoverConsumer = LinkInfoEx.getHoverConsumer(linkInfo);
     if (linkHoverConsumer != myLinkHoverConsumer) {
@@ -426,12 +449,12 @@ public class TerminalPanel extends JComponent implements TerminalDisplay, Termin
     return new LineCellInterval(initialCell.getLine(), startColumn, endColumn);
   }
 
-  private void handleHyperlinks(Component component) {
+  private void handleHyperlinks(Component component, int modifiersEx) {
     PointerInfo a = MouseInfo.getPointerInfo();
     if (a != null) {
       java.awt.Point b = a.getLocation();
       SwingUtilities.convertPointFromScreen(b, component);
-      handleHyperlinks(b);
+      handleHyperlinks(b, modifiersEx);
     }
   }
 
@@ -1050,6 +1073,7 @@ public class TerminalPanel extends JComponent implements TerminalDisplay, Termin
 
   // also called from com.intellij.terminal.JBTerminalPanel
   public void handleKeyEvent(@NotNull KeyEvent e) {
+    refreshHyperlinksOnModifierChange(e);
     for (TerminalKeyInterceptor interceptor : keyInterceptors) {
       if (interceptor.beforeKeyEvent(e)) {
         return;
@@ -1068,6 +1092,23 @@ public class TerminalPanel extends JComponent implements TerminalDisplay, Termin
     for (TerminalKeyInterceptor interceptor : keyInterceptors) {
       interceptor.afterKeyEvent(e);
     }
+  }
+
+  /**
+   * Keeps the hovered link in sync while the mouse stays still and only the modifier keys change, so that a link
+   * gated behind a modifier lights up the moment that modifier is pressed.
+   */
+  private void refreshHyperlinksOnModifierChange(@NotNull KeyEvent e) {
+    int id = e.getID();
+    if (id != KeyEvent.KEY_PRESSED && id != KeyEvent.KEY_RELEASED) {
+      return;
+    }
+    int keyCode = e.getKeyCode();
+    if (keyCode != KeyEvent.VK_CONTROL && keyCode != KeyEvent.VK_META && keyCode != KeyEvent.VK_ALT
+        && keyCode != KeyEvent.VK_SHIFT && keyCode != KeyEvent.VK_ALT_GRAPH) {
+      return;
+    }
+    handleHyperlinks(this, e.getModifiersEx());
   }
 
   private void updateSelectionEnd(Point selectionEnd) {
@@ -1431,8 +1472,13 @@ public class TerminalPanel extends JComponent implements TerminalDisplay, Termin
     if (style instanceof HyperlinkStyle) {
       HyperlinkStyle hyperlinkStyle = (HyperlinkStyle) style;
       HyperlinkStyle.HighlightMode highlightMode = hyperlinkStyle.getHighlightMode();
-      return highlightMode == HyperlinkStyle.HighlightMode.ALWAYS ||
-        (highlightMode == HyperlinkStyle.HighlightMode.HOVER && isHoveredHyperlink(hyperlinkStyle));
+      if (highlightMode == HyperlinkStyle.HighlightMode.NEVER) {
+        return false;
+      }
+      if (highlightMode == HyperlinkStyle.HighlightMode.ALWAYS && !requiresActivationModifiers(hyperlinkStyle.getLinkInfo())) {
+        return true;
+      }
+      return isHoveredHyperlink(hyperlinkStyle);
     }
     return false;
   }

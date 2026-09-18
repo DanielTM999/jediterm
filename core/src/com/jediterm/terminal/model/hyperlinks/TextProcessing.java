@@ -166,14 +166,19 @@ public class TextProcessing {
     }
     for (LinkResultItem item : linkResultItems) {
       if (item.getStartOffset() < 0 || item.getEndOffset() > lineStr.length()) continue;
-      TextStyle style = new HyperlinkStyle(myHyperlinkColor.getForeground(), myHyperlinkColor.getBackground(),
-                                           item.getLinkInfo(), myHighlightMode);
+      boolean preserveTextStyle = item.getLinkInfo().isPreserveTextStyle();
+      TextStyle style = preserveTextStyle ? null
+                                          : new HyperlinkStyle(myHyperlinkColor.getForeground(), myHyperlinkColor.getBackground(),
+                                                               item.getLinkInfo(), myHighlightMode);
       int prevLinesLength = 0;
       for (TerminalLine line : lineInfo.myLinesToProcess) {
         int startLineOffset = Math.max(prevLinesLength, item.getStartOffset());
         int endLineOffset = Math.min(prevLinesLength + lineInfo.myTerminalWidth, item.getEndOffset());
         if (startLineOffset < endLineOffset) {
-          line.writeString(startLineOffset - prevLinesLength, new CharBuffer(lineStr.substring(startLineOffset, endLineOffset)), style);
+          TextStyle lineStyle = preserveTextStyle
+                                ? hyperlinkStyleKeepingColors(line, startLineOffset - prevLinesLength, item.getLinkInfo())
+                                : style;
+          line.writeString(startLineOffset - prevLinesLength, new CharBuffer(lineStr.substring(startLineOffset, endLineOffset)), lineStyle);
           linkAdded = true;
         }
         prevLinesLength += terminalWidth;
@@ -182,6 +187,11 @@ public class TextProcessing {
     if (linkAdded) {
       fireHyperlinksChanged();
     }
+  }
+
+  private @NotNull TextStyle hyperlinkStyleKeepingColors(@NotNull TerminalLine line, int offset, @NotNull LinkInfo linkInfo) {
+    TextStyle currentStyle = line.getStyleAt(offset);
+    return new HyperlinkStyle(currentStyle != null ? currentStyle : myHyperlinkColor, linkInfo);
   }
 
   private void fireHyperlinksChanged() {

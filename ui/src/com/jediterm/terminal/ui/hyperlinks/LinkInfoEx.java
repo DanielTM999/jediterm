@@ -15,17 +15,21 @@ public final class LinkInfoEx extends LinkInfo {
 
   private final PopupMenuGroupProvider myPopupMenuGroupProvider;
   private final HoverConsumer myHoverConsumer;
+  private final Integer myActivationModifiersEx;
 
   public LinkInfoEx(@NotNull Runnable navigateCallback) {
-    this(navigateCallback, null, null);
+    this(navigateCallback, null, null, null, false);
   }
 
   private LinkInfoEx(@NotNull Runnable navigateCallback,
                      @Nullable PopupMenuGroupProvider popupMenuGroupProvider,
-                     @Nullable HoverConsumer hoverConsumer) {
-    super(navigateCallback);
+                     @Nullable HoverConsumer hoverConsumer,
+                     @Nullable Integer activationModifiersEx,
+                     boolean preserveTextStyle) {
+    super(navigateCallback, preserveTextStyle);
     myPopupMenuGroupProvider = popupMenuGroupProvider;
     myHoverConsumer = hoverConsumer;
+    myActivationModifiersEx = activationModifiersEx;
   }
 
   public @Nullable PopupMenuGroupProvider getPopupMenuGroupProvider() {
@@ -34,6 +38,14 @@ public final class LinkInfoEx extends LinkInfo {
 
   public @Nullable HoverConsumer getHoverConsumer() {
     return myHoverConsumer;
+  }
+
+  /**
+   * Extended modifier mask that must be held down for this link to be highlighted and activated, or {@code null}
+   * to fall back to {@link com.jediterm.terminal.ui.settings.UserSettingsProvider#getLinkActivationModifiersEx()}.
+   */
+  public @Nullable Integer getActivationModifiersEx() {
+    return myActivationModifiersEx;
   }
 
   public interface PopupMenuGroupProvider {
@@ -59,6 +71,8 @@ public final class LinkInfoEx extends LinkInfo {
     private Runnable myNavigateCallback;
     private PopupMenuGroupProvider myPopupMenuGroupProvider;
     private HoverConsumer myHoverConsumer;
+    private Integer myActivationModifiersEx;
+    private boolean myPreserveTextStyle;
 
     public @NotNull Builder setNavigateCallback(@NotNull Runnable navigateCallback) {
       myNavigateCallback = navigateCallback;
@@ -75,8 +89,19 @@ public final class LinkInfoEx extends LinkInfo {
       return this;
     }
 
+    public @NotNull Builder setActivationModifiersEx(@Nullable Integer activationModifiersEx) {
+      myActivationModifiersEx = activationModifiersEx;
+      return this;
+    }
+
+    public @NotNull Builder setPreserveTextStyle(boolean preserveTextStyle) {
+      myPreserveTextStyle = preserveTextStyle;
+      return this;
+    }
+
     public @NotNull LinkInfo build() {
-      return new LinkInfoEx(myNavigateCallback, myPopupMenuGroupProvider, myHoverConsumer);
+      return new LinkInfoEx(myNavigateCallback, myPopupMenuGroupProvider, myHoverConsumer, myActivationModifiersEx,
+                            myPreserveTextStyle);
     }
   }
 
@@ -87,5 +112,10 @@ public final class LinkInfoEx extends LinkInfo {
   @Contract("null -> null")
   public static @Nullable HoverConsumer getHoverConsumer(@Nullable LinkInfo linkInfo) {
     return linkInfo instanceof LinkInfoEx ? ((LinkInfoEx) linkInfo).getHoverConsumer() : null;
+  }
+
+  @Contract("null -> null")
+  public static @Nullable Integer getActivationModifiersEx(@Nullable LinkInfo linkInfo) {
+    return linkInfo instanceof LinkInfoEx ? ((LinkInfoEx) linkInfo).getActivationModifiersEx() : null;
   }
 }
