@@ -1,0 +1,4 @@
+jdk:
+  - openjdk21
+install:
+  - ./gradlew --no-daemon -x test -Pgroup=com.github.DanielTM999 publishToMavenLocal
